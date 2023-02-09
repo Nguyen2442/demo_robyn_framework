@@ -1,0 +1,5 @@
+dill==0.3.6
+multiprocess==0.70.12.2
+python-dotenv==0.21.0
+robyn==0.18.3
+watchdog==2.1.3
