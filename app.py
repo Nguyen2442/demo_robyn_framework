@@ -3,10 +3,27 @@ from helper import get_item
 import json
 from model import Fruit
 from bson import ObjectId
-
+from celery import Celery
+from schemas import FruitPostModel
 
 app = Robyn(__file__)
 websocket = WS(app, "/ws")
+
+
+#-----------celery
+celery = Celery(
+    "Hello",
+    broker="redis://127.0.0.1:6379/0",
+    backend="redis://127.0.0.1:6379/0"
+)
+
+@celery.task
+def run_hello():
+    import time
+    for i in range(1, 100):
+        time.sleep(2)
+        print("Hello", i)
+    return
 
 
 # ---------websocket------------#
@@ -41,13 +58,38 @@ def connect():
 
 
 
+# ------------Middleware---------------#
+@app.before_request("/")
+async def hello_before_request(request):
+    print(100*"hi")
+    print("before")
+    request["headers"]["before"] = "before_request"
+    print(request)
+    return request
+
+
+@app.after_request("/")
+def hello_after_request(request):
+    print("after")
+    print(request)
+
+
+def custom_middleware(view_func):
+    async def middleware(request, *args, **kwargs):
+        print(10*"Middleware ")
+        return await view_func(request, *args, **kwargs)
+    return middleware
+
+
+
 @app.get("/")
+@custom_middleware
 async def hello(request):
     return "Hello, world!"
 
 
 # ----------- routes -------
-@app.get("/fruits", const=True)
+@app.get("/fruits")
 async def all_fruits(request):
     all_fruits = Fruit.find()
     result = [
@@ -103,9 +145,10 @@ async def get_fruit(request):
 
 
 @app.post("/fruit")
-async def add_fruit(request):
-    request_body = json.loads(bytearray(request['body']).decode("utf-8"))
-    new_fruit = Fruit(name=request_body.get("name"))
+async def add_fruit(input_data):
+    request_data = json.loads(bytearray(input_data['body']).decode("utf-8"))
+    fruit_data = FruitPostModel(**request_data)
+    new_fruit = Fruit(name=fruit_data.name)
     await new_fruit.commit()
     return {
         "status_code": 201,
@@ -206,39 +249,9 @@ def shutdown_handler():
     print("Shutting down")
 
 
-# ------------Middleware---------------#
-@app.before_request("/")
-async def hello_before_request(request):
-    print(100*"hi")
-    print("before")
-    print(request)
-
-
-@app.after_request("/")
-def hello_after_request(request):
-    print("after")
-    print(request)
-
-
-# @app.before_request("/")
-# async def hello_before_request(request):
-#     request["headers"]["before"] = "before_request"
-#     return request
-
-
-# @app.after_request("/")
-# async def hello_after_request(request):
-#     request["headers"]["after"] = "after_request"
-#     return request
-
-
-# @app.get("/")
-# async def middlewares():
-#     return ""
 
 
 if __name__ == "__main__":
-    app.add_request_header("server", "robyn")
     app.startup_handler(startup_handler)
-    #app.middleware_router()
     app.start(port=8080)
+    #run_hello()
